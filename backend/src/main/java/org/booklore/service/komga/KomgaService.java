@@ -4,13 +4,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.booklore.exception.ApiError;
 import org.booklore.mapper.komga.KomgaMapper;
+import org.booklore.mapper.custom.BookLoreUserTransformer;
 import org.booklore.model.dto.BookLoreUser;
 import org.booklore.model.dto.MagicShelf;
 import org.booklore.model.dto.komga.*;
 import org.booklore.model.entity.BookEntity;
+import org.booklore.model.entity.BookLoreUserEntity;
 import org.booklore.model.entity.BookMetadataEntity;
 import org.booklore.model.entity.LibraryEntity;
 import org.booklore.model.enums.BookFileType;
+import org.booklore.repository.UserRepository;
 import org.booklore.repository.BookRepository;
 import org.booklore.repository.LibraryRepository;
 import org.booklore.service.MagicShelfService;
@@ -44,6 +47,8 @@ public class KomgaService {
     private final BookRepository bookRepository;
     private final LibraryRepository libraryRepository;
     private final KomgaMapper komgaMapper;
+    private final UserRepository userRepository;
+    private final BookLoreUserTransformer bookLoreUserTransformer;
     private final MagicShelfService magicShelfService;
     private final CbxReaderService cbxReaderService;
     private final PdfReaderService pdfReaderService;
@@ -51,12 +56,18 @@ public class KomgaService {
     private final ContentRestrictionService contentRestrictionService;
 
 
-    public boolean validateBookContentAccess(BookLoreUser user, Long bookId) {
-        if (user == null) {
+    public boolean validateBookContentAccess(Long userId, Long bookId) {
+        if (userId == null) {
             return false;
         }
 
-        if (user.getPermissions() != null && user.getPermissions().isAdmin()) {
+        BookLoreUserEntity entity = userRepository.findById(userId)
+                .orElse(null);
+        if (entity == null) {
+            return false;
+        }
+
+        if (entity.getPermissions() != null && entity.getPermissions().isPermissionAdmin()) {
             return true;
         }
 
@@ -67,6 +78,7 @@ public class KomgaService {
             return false;
         }
 
+        BookLoreUser user = bookLoreUserTransformer.toDTO(entity);
         boolean hasLibraryAccess = user.getAssignedLibraries() != null && user.getAssignedLibraries().stream()
                 .anyMatch(library -> library.getId().equals(book.getLibrary().getId()));
 
@@ -74,7 +86,7 @@ public class KomgaService {
             return false;
         }
 
-        List<BookEntity> filtered = contentRestrictionService.applyRestrictions(List.of(book), user.getId());
+        List<BookEntity> filtered = contentRestrictionService.applyRestrictions(List.of(book), userId);
         if (filtered.isEmpty()) {
             return false;
         }
@@ -389,10 +401,10 @@ public class KomgaService {
         return seriesMap;
     }
     
-    public KomgaPageableDto<KomgaCollectionDto> getCollections(int page, int size, boolean unpaged) {
+    public KomgaPageableDto<KomgaCollectionDto> getCollections(int page, int size, boolean unpaged, Long userId) {
         log.debug("Getting collections, page: {}, size: {}, unpaged: {}", page, size, unpaged);
         
-        List<MagicShelf> magicShelves = magicShelfService.getUserShelves();
+        List<MagicShelf> magicShelves = magicShelfService.getUserShelvesForOpds(userId);
         log.debug("Found {} magic shelves", magicShelves.size());
         
         // Convert to collection DTOs - for now, series count is 0 since we don't have 

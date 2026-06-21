@@ -10,7 +10,6 @@ import org.booklore.config.security.service.AuthenticationService;
 import org.booklore.config.security.userdetails.OpdsUserDetails;
 import org.booklore.exception.ApiError;
 import org.booklore.mapper.komga.KomgaMapper;
-import org.booklore.model.dto.BookLoreUser;
 import org.booklore.model.dto.komga.KomgaBookDto;
 import org.booklore.model.dto.komga.KomgaLibraryDto;
 import org.booklore.model.dto.komga.KomgaPageableDto;
@@ -61,14 +60,20 @@ public class KomgaController {
         }
     }
 
-    private void validateBookContentAccess(Long bookId) {
-        BookLoreUser user = authenticationService.getAuthenticatedUser();
+    private Long getOpdsUserId() {
+        OpdsUserDetails details = authenticationService.getOpdsUser();
+        return details != null && details.getOpdsUserV2() != null
+                ? details.getOpdsUserV2().getUserId()
+                : null;
+    }
 
-        if (user == null) {
-            throw ApiError.FORBIDDEN.createException("Authentication required");
+    private void validateBookContentAccess(Long bookId) {
+        Long opdsUserId = getOpdsUserId();
+        if (opdsUserId == null) {
+            throw ApiError.FORBIDDEN.createException("Authentication required with OPDS credentials");
         }
 
-        if (!komgaService.validateBookContentAccess(user, bookId)) {
+        if (!komgaService.validateBookContentAccess(opdsUserId, bookId)) {
             throw ApiError.BOOK_NOT_FOUND.createException(bookId);
         }
     }
@@ -232,6 +237,6 @@ public class KomgaController {
             @Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size,
             @Parameter(description = "Return all collections without paging") @RequestParam(defaultValue = "false") boolean unpaged) {
-        return writeJson(komgaService.getCollections(page, size, unpaged));
+        return writeJson(komgaService.getCollections(page, size, unpaged, getOpdsUserId()));
     }
 }
